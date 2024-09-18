@@ -1,0 +1,135 @@
+# Import necessary libraries
+import pandas as pd
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.preprocessing import OneHotEncoder, OrdinalEncoder, LabelEncoder
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from xgboost import XGBClassifier
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+
+# Load the dataset
+
+df = pd.read_csv('/content/Thyroid_Diff.csv')
+
+# Preprocessing
+nominal_features = ['Gender', 'Smoking', 'Hx Smoking', 'Hx Radiothreapy', 'Thyroid Function',
+                    'Physical Examination', 'Adenopathy', 'Pathology', 'Focality', 'Response']
+ordinal_features = ['Risk', 'T', 'N', 'M', 'Stage']
+target = 'Recurred'
+
+# Instantiate encoders
+onehot_encoder = OneHotEncoder(sparse=False, drop='first')
+ordinal_encoder = OrdinalEncoder()
+label_encoder = LabelEncoder()
+
+# Apply One-hot encoding to nominal features
+df_nominal_encoded = pd.DataFrame(onehot_encoder.fit_transform(df[nominal_features]),
+                                  columns=onehot_encoder.get_feature_names_out(nominal_features))
+
+# Apply Ordinal encoding to ordinal features
+df_ordinal_encoded = pd.DataFrame(ordinal_encoder.fit_transform(df[ordinal_features]),
+                                  columns=ordinal_features)
+
+# Label encode the target variable
+df[target] = label_encoder.fit_transform(df[target])
+
+# Combine encoded features with the numeric Age column and the target
+df_preprocessed = pd.concat([df[['Age']], df_nominal_encoded, df_ordinal_encoded, df[[target]]], axis=1)
+
+# Split the data into features (X) and target (y)
+X = df_preprocessed.drop(columns=[target])
+y = df_preprocessed[target]
+
+# Split into training and testing sets (80% train, 20% test)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=2, stratify=y)
+
+# Define the hyperparameters for each model
+param_grid_dt = {
+    'max_depth': [2,3, 5, 10],
+    'min_samples_split': [2, 5, 10],
+    'min_samples_leaf': [1, 2, 4]
+}
+
+param_grid_rf = {
+    'n_estimators': [100, 200,300,400,500],
+    'max_depth': [5,7, 10],
+    'min_samples_split': [2, 5],
+    'min_samples_leaf': [1, 2]
+}
+
+param_grid_gb = {
+    'n_estimators': [100, 200],
+    'learning_rate': [0.01,0.03,0.06, 0.1,0.3],
+    'max_depth': [3, 4,5],
+    'subsample': [0.8, 1.0]
+}
+
+param_grid_xgb = {
+    'n_estimators': [100, 200,300,400,500],
+    'learning_rate': [0.01, 0.1],
+    'max_depth': [3, 5],
+    'colsample_bytree': [0.8, 1.0]
+}
+
+# Initialize models
+decision_tree = DecisionTreeClassifier(random_state=2)
+random_forest = RandomForestClassifier(random_state=2)
+gradient_boosting = GradientBoostingClassifier(random_state=2)
+xgboost = XGBClassifier(random_state=2, use_label_encoder=False, eval_metric='logloss')
+
+# Set up GridSearchCV for each model
+grid_dt = GridSearchCV(decision_tree, param_grid_dt, cv=5, scoring='accuracy')
+grid_rf = GridSearchCV(random_forest, param_grid_rf, cv=5, scoring='accuracy')
+grid_gb = GridSearchCV(gradient_boosting, param_grid_gb, cv=5, scoring='accuracy')
+grid_xgb = GridSearchCV(xgboost, param_grid_xgb, cv=5, scoring='accuracy')
+
+# Train each model with hyperparameter tuning
+grid_dt.fit(X_train, y_train)
+grid_rf.fit(X_train, y_train)
+grid_gb.fit(X_train, y_train)
+grid_xgb.fit(X_train, y_train)
+
+# Get the best models
+best_dt = grid_dt.best_estimator_
+best_rf = grid_rf.best_estimator_
+best_gb = grid_gb.best_estimator_
+best_xgb = grid_xgb.best_estimator_
+
+# Predictions on test data
+y_pred_dt = best_dt.predict(X_test)
+y_pred_rf = best_rf.predict(X_test)
+y_pred_gb = best_gb.predict(X_test)
+y_pred_xgb = best_xgb.predict(X_test)
+
+# Evaluate models
+metrics = {
+    'Model': ['Decision Tree', 'Random Forest', 'Gradient Boosting', 'XGBoost'],
+    'Accuracy': [
+        accuracy_score(y_test, y_pred_dt),
+        accuracy_score(y_test, y_pred_rf),
+        accuracy_score(y_test, y_pred_gb),
+        accuracy_score(y_test, y_pred_xgb)
+    ],
+    'Precision': [
+        precision_score(y_test, y_pred_dt),
+        precision_score(y_test, y_pred_rf),
+        precision_score(y_test, y_pred_gb),
+        precision_score(y_test, y_pred_xgb)
+    ],
+    'Recall': [
+        recall_score(y_test, y_pred_dt),
+        recall_score(y_test, y_pred_rf),
+        recall_score(y_test, y_pred_gb),
+        recall_score(y_test, y_pred_xgb)
+    ],
+    'F1 Score': [
+        f1_score(y_test, y_pred_dt),
+        f1_score(y_test, y_pred_rf),
+        f1_score(y_test, y_pred_gb),
+        f1_score(y_test, y_pred_xgb)
+    ]
+}
+
+# Create a dataframe for model performance comparison
+metrics_df = pd.DataFrame(metrics)
+print(metrics_df)
